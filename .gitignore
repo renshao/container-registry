@@ -7,3 +7,5 @@
 
 # Personal notes
 notes/
+# Local secrets
+.env
