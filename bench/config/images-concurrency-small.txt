@@ -1,0 +1,20 @@
+# Small-image corpus for the request-path half of the concurrency sweep.
+#
+# The mixed corpus answers "can the registry fill the pipe" and both engines
+# do, at ~37 Gbps on an m6idn.2xlarge, using well under one core. Once the NIC
+# is the constraint every engine looks identical, so that sweep cannot say
+# anything about the server above the point where it saturates.
+#
+# These six images average ~13 MB, roughly a twentieth of the mixed corpus, so
+# a pull is dominated by its manifest fetch, blob opens and connection setup
+# rather than by streaming. If a request-rate ceiling exists below the line
+# rate, this is where it shows up.
+#
+# Refs are in the stripped repo:tag form the registries actually store, because
+# these are pulled from the local registry and never from upstream.
+library/busybox:1.37
+library/alpine:3.21
+library/redis:7.4-alpine
+library/caddy:2.9-alpine
+library/python:3.13-alpine
+library/nginx:1.27-alpine

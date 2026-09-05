@@ -373,7 +373,65 @@ REMOTE_IMAGES="/tmp/images-conc-${RUN_ID}.txt"
 DIST_VERSION="$(jq -r '.distribution_version' "$ENGINE_SPEC")"
 
 if [[ "$SKIP_LOADTEST" == false ]]; then
-  scp -q -i "$SSH_KEY" "${SSH_OPTS[@]}" "$IMAGES_FILE" "$ADMIN@$LT_PUB:$REMOTE_IMAGES"
+  # ---------- 7a. what is actually servable ----------
+  # The corpus file is what we asked for; it is not necessarily what got
+  # mirrored. A public mirror can answer BLOB_UNKNOWN for a layer it never
+  # cached, and that image then exists in no engine — so every pull of it fails
+  # on every engine, and the sweep reports a failure rate that belongs to the
+  # upstream registry. Ask each engine what it can serve and test the
+  # intersection, which is also the only set that keeps the comparison
+  # byte-identical across engines.
+  REFS="$RUN_DIR/images-refs.txt"
+  : > "$REFS"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"; line="${line//[[:space:]]/}"
+    [[ -z "$line" ]] && continue
+    first="${line%%/*}"
+    if [[ "$line" == */* && ( "$first" == *.* || "$first" == *:* || "$first" == "localhost" ) ]]; then
+      line="${line#*/}"
+    fi
+    printf '%s\n' "$line"
+  done < "$IMAGES_FILE" > "$REFS"
+
+  log "verifying the corpus against each engine"
+  for engine in $ENGINE_LIST; do
+    port="$(engine_field "$engine" port)"
+    stop_all_engines
+    start_engine "$engine"
+    scp -q -i "$SSH_KEY" "${SSH_OPTS[@]}" "$REFS" "$ADMIN@$REG_PUB:/tmp/refs.txt"
+    ssh_reg "while IFS= read -r r; do
+               repo=\${r%:*}; tag=\${r##*:}
+               code=\$(curl -s -o /dev/null -w '%{http_code}' \
+                 -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+                 http://127.0.0.1:$port/v2/\$repo/manifests/\$tag)
+               [ \"\$code\" = 200 ] && printf '%s\n' \"\$r\"
+             done < /tmp/refs.txt" > "$RUN_DIR/.present-$engine.txt" || true
+    log "  $engine serves $(wc -l < "$RUN_DIR/.present-$engine.txt" | tr -d ' ')/$(wc -l < "$REFS" | tr -d ' ') refs"
+  done
+  stop_all_engines
+
+  EFFECTIVE_IMAGES="$RUN_DIR/images-effective.txt"
+  cp "$REFS" "$EFFECTIVE_IMAGES"
+  for engine in $ENGINE_LIST; do
+    comm -12 <(sort "$EFFECTIVE_IMAGES") <(sort "$RUN_DIR/.present-$engine.txt") > "$EFFECTIVE_IMAGES.tmp"
+    mv "$EFFECTIVE_IMAGES.tmp" "$EFFECTIVE_IMAGES"
+  done
+  # Restore the corpus file's order; comm sorted it, and pull order is part of
+  # the benchmark definition.
+  awk 'NR==FNR{keep[$0]=1; next} keep[$0]' "$EFFECTIVE_IMAGES" "$REFS" > "$EFFECTIVE_IMAGES.tmp"
+  mv "$EFFECTIVE_IMAGES.tmp" "$EFFECTIVE_IMAGES"
+  rm -f "$RUN_DIR"/.present-*.txt
+
+  N_IMAGES="$(wc -l < "$EFFECTIVE_IMAGES" | tr -d ' ')"
+  [[ "$N_IMAGES" -gt 0 ]] || die "no image is servable by every engine — nothing to benchmark"
+  DROPPED=$(( $(wc -l < "$REFS") - N_IMAGES ))
+  if [[ "$DROPPED" -gt 0 ]]; then
+    log "WARNING: $DROPPED ref(s) not servable by every engine, excluded from the sweep:"
+    comm -13 <(sort "$EFFECTIVE_IMAGES") <(sort "$REFS") | sed 's/^/  - /'
+  fi
+  log "benchmarking $N_IMAGES images"
+
+  scp -q -i "$SSH_KEY" "${SSH_OPTS[@]}" "$EFFECTIVE_IMAGES" "$ADMIN@$LT_PUB:$REMOTE_IMAGES"
 
   # pulls at concurrency c, clamped. A point must be several waves of work or
   # its percentiles describe the ramp-up rather than the steady state.
@@ -518,7 +576,11 @@ N_ENGINES="$(echo "$ENGINE_LIST" | wc -w | tr -d ' ')"
   echo "|---------|-------|"
   echo "| Provider | $PROVIDER |"
   echo "| Registry VM | $(jq -r '.instance_type_registry.value // "n/a"' "$RUN_DIR/terraform.json" 2>/dev/null || echo n/a) |"
-  echo "| Corpus | \`$(basename "$IMAGES_FILE")\` — $N_IMAGES images |"
+  if [[ -f "$RUN_DIR/images-effective.txt" ]]; then
+    echo "| Corpus | \`$(basename "$IMAGES_FILE")\` — $(wc -l < "$RUN_DIR/images-effective.txt" | tr -d ' ') images served by every engine |"
+  else
+    echo "| Corpus | \`$(basename "$IMAGES_FILE")\` — $N_IMAGES images |"
+  fi
   echo "| Concurrency sweep | $SWEEP |"
   echo "| Pulls per point | ${PULLS_PER_CLIENT}× concurrency, clamped to [$MIN_PULLS, $MAX_PULLS] |"
   echo "| Blob fanout per pull | $BLOB_CONCURRENCY |"
