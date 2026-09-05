@@ -14,34 +14,42 @@
 #
 # Every ref is anonymously pullable and resolves to linux/amd64. populate.sh
 # mirrors each one once from its public home, then fans out locally.
+#
+# The Docker Hub images are named through mirror.gcr.io, Google's pull-through
+# cache. Populating 25 images costs well over 25 upstream manifest fetches once
+# multi-arch indexes are counted, which trips Hub's 100-per-6h anonymous limit
+# partway through the corpus. That surfaces as a failed push into whichever
+# engine populate happens to fan out from, so a rate limit reads as a defect in
+# the registry under test. The mirror has no such limit and needs no credential.
+# Hosts that are not Docker Hub are left pointing at their own registries.
 
 # --- small: 2-120 MB ---
-busybox:1.37
-alpine:3.21
-redis:7.4-alpine
-caddy:2.9-alpine
-python:3.13-alpine
-nginx:1.27-alpine
-node:22-alpine
-postgres:17-alpine
+mirror.gcr.io/library/busybox:1.37
+mirror.gcr.io/library/alpine:3.21
+mirror.gcr.io/library/redis:7.4-alpine
+mirror.gcr.io/library/caddy:2.9-alpine
+mirror.gcr.io/library/python:3.13-alpine
+mirror.gcr.io/library/nginx:1.27-alpine
+mirror.gcr.io/library/node:22-alpine
+mirror.gcr.io/library/postgres:17-alpine
 
 # --- medium: 160-580 MB ---
-ubuntu:24.04
-debian:bookworm-slim
-nginx:1.27
-rabbitmq:4.0-management
-postgres:17
-mysql:9.1
-eclipse-temurin:21-jdk
-golang:1.23
-mongo:8.0
+mirror.gcr.io/library/ubuntu:24.04
+mirror.gcr.io/library/debian:bookworm-slim
+mirror.gcr.io/library/nginx:1.27
+mirror.gcr.io/library/rabbitmq:4.0-management
+mirror.gcr.io/library/postgres:17
+mirror.gcr.io/library/mysql:9.1
+mirror.gcr.io/library/eclipse-temurin:21-jdk
+mirror.gcr.io/library/golang:1.23
+mirror.gcr.io/library/mongo:8.0
 mcr.microsoft.com/dotnet/sdk:8.0
-node:22
-python:3.13
+mirror.gcr.io/library/node:22
+mirror.gcr.io/library/python:3.13
 
 # --- large: 0.5-2.1 GB ---
-rust:1.83
-gcc:14
-tensorflow/tensorflow:2.18.0
+mirror.gcr.io/library/rust:1.83
+mirror.gcr.io/library/gcc:14
+mirror.gcr.io/tensorflow/tensorflow:2.18.0
 docker.elastic.co/elasticsearch/elasticsearch:8.16.1
-nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04
+mirror.gcr.io/nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04

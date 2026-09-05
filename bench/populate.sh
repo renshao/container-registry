@@ -81,12 +81,19 @@ while IFS= read -r ref || [[ -n "$ref" ]]; do
   # --- hop 1: public source into engine[0] ---
   echo "     [${ENGINE_NAMES[0]}] <- $ref"
   start=$(date +%s.%N)
-  if ! crane copy --insecure "$ref" "$source_target" 2>&1 | sed 's/^/       /'; then
-    echo "FAILED: $ref -> $source_target" >&2
+  # This hop is two things at once: a pull from the public registry and a push
+  # into engine[0]. Attributing its failure to engine[0] alone is how an
+  # upstream rate limit comes to read as a defect in the registry under test,
+  # so the stage is recorded and the engine is left unnamed.
+  if ! crane copy --insecure "$ref" "$source_target" 2>&1 | tee /tmp/populate-err.$$ | sed 's/^/       /'; then
+    echo "FAILED: $ref -> $source_target (upstream fetch or first push)" >&2
     results+=("$(jq -nc --arg ref "$ref" --arg engine "${ENGINE_NAMES[0]}" \
-      '{ref:$ref,ok:false,failed_engine:$engine}')")
+      --arg err "$(tail -c 400 /tmp/populate-err.$$ | tr -d '\000')" \
+      '{ref:$ref,ok:false,stage:"upstream-to-fanout-source",fanout_target:$engine,error:$err}')")
+    rm -f /tmp/populate-err.$$
     continue
   fi
+  rm -f /tmp/populate-err.$$
   end=$(date +%s.%N)
 
   pushes="$(jq -nc --arg name "${ENGINE_NAMES[0]}" \
@@ -108,9 +115,11 @@ while IFS= read -r ref || [[ -n "$ref" ]]; do
       --argjson secs "$(echo "$end - $start" | bc -l)" '$acc + {($name): $secs}')"
   done
 
+  # A hop-2 failure is unambiguous: the bytes were already local, so only the
+  # destination engine can have refused them.
   if [[ -n "$failed" ]]; then
     results+=("$(jq -nc --arg ref "$ref" --arg engine "$failed" \
-      '{ref:$ref,ok:false,failed_engine:$engine}')")
+      '{ref:$ref,ok:false,stage:"fanout",failed_engine:$engine}')")
     continue
   fi
 
