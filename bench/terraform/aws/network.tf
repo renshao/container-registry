@@ -60,7 +60,7 @@ resource "aws_security_group" "bench" {
   ingress {
     description = "Registry ports from VPC - loadtester to registry"
     from_port   = 5000
-    to_port     = 5011
+    to_port     = 5099
     protocol    = "tcp"
     cidr_blocks = ["10.30.0.0/16"]
   }

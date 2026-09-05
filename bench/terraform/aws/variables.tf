@@ -16,15 +16,29 @@ variable "prefix" {
 }
 
 variable "instance_type_registry" {
-  description = "EC2 instance type for the registry server. Must have local NVMe instance store. m6id.2xlarge (8 vCPU / 32 GiB / 474 GB NVMe) matches Azure Standard_D8ds_v5 used in the Azure run."
+  description = <<-EOT
+    EC2 instance type for the registry server. Must have local NVMe instance store.
+
+    m6idn.2xlarge is the default: identical 8 vCPU / 32 GiB / 474 GB NVMe to the
+    m6id.2xlarge this used to be, but with a 12.5 Gbps *sustained* network
+    baseline rather than 3.125. On m6id a high-concurrency run drains its burst
+    credits partway through and the throughput curve bends for a reason that has
+    nothing to do with the registry under test.
+  EOT
   type        = string
-  default     = "m6id.2xlarge"
+  default     = "m6idn.2xlarge"
 }
 
 variable "instance_type_loadtester" {
-  description = "EC2 instance type for the load tester. Network/CPU-bound; no local storage needed."
+  description = <<-EOT
+    EC2 instance type for the load tester. Network/CPU-bound; no local storage needed.
+
+    Sized so the client is never the constraint: c6in.4xlarge has 16 vCPU and a
+    25 Gbps baseline, double the registry's 12.5, so a flattening curve is the
+    registry saturating and not the generator running out of headroom.
+  EOT
   type        = string
-  default     = "c6i.large"
+  default     = "c6in.4xlarge"
 }
 
 variable "operator_cidr" {

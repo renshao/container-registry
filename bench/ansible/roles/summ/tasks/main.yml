@@ -10,6 +10,71 @@
   ansible.builtin.set_fact:
     summ_engines: "{{ selected_engines | selectattr('kind', 'eq', 'summ') | list }}"
 
+# Two ways to get a summ binary onto the VM, and exactly one runs.
+#
+#   summ_release set  -> download that GitHub release tag. This is what you want
+#                        when the question is "how does the shipped artifact
+#                        behave": no toolchain, no ~10 min RocksDB compile, and
+#                        the bytes under test are the bytes users download.
+#   summ_release unset -> build the operator's working tree, so a run measures
+#                        work in progress. This is the original behaviour.
+- name: Decide how summ is installed
+  ansible.builtin.set_fact:
+    summ_from_release: "{{ (summ_release | default('')) | length > 0 }}"
+
+- name: Show the summ install mode
+  ansible.builtin.debug:
+    msg: >-
+      {{ summ_from_release | ternary('release ' ~ (summ_release | default('')),
+                                     'source build from ' ~ (summ_src | default('?'))) }}
+  when: summ_engines | length > 0
+
+# ---------------------------------------------------------------- release path
+- name: Download and verify the summ release
+  # The published .sha256 is checked before the tarball is unpacked, matching
+  # what the distribution role does for its own release.
+  become: true
+  ansible.builtin.shell: |
+    set -euo pipefail
+    TAG="{{ summ_release }}"
+    case "$(uname -m)" in
+      x86_64)  TRIPLE=x86_64-unknown-linux-gnu ;;
+      aarch64) TRIPLE=aarch64-unknown-linux-gnu ;;
+      *) echo "ERROR: unsupported architecture $(uname -m)" >&2; exit 1 ;;
+    esac
+    BASE="https://github.com/summcr/summ/releases/download/${TAG}"
+    TARBALL="summ-${TRIPLE}.tar.gz"
+    cd "$(mktemp -d)"
+    curl -fsSL -O "${BASE}/${TARBALL}"
+    curl -fsSL -O "${BASE}/${TARBALL}.sha256"
+    expected=$(awk '{print $1}' "${TARBALL}.sha256")
+    actual=$(sha256sum "${TARBALL}" | awk '{print $1}')
+    if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+      echo "ERROR: checksum mismatch for ${TARBALL}" >&2
+      echo "  expected: ${expected:-<empty>}" >&2
+      echo "  actual:   ${actual}" >&2
+      exit 1
+    fi
+    tar xzf "${TARBALL}"
+    install -m 0755 summ /usr/local/bin/summ
+    /usr/local/bin/summ --version
+  args:
+    executable: /bin/bash
+  register: summ_release_install
+  changed_when: true
+  when:
+    - summ_engines | length > 0
+    - summ_from_release
+
+- name: Show the installed summ version
+  ansible.builtin.debug:
+    msg: "{{ summ_release_install.stdout_lines | last }}"
+  when:
+    - summ_engines | length > 0
+    - summ_from_release
+
+# ----------------------------------------------------------------- source path
+
 - name: Install summ build prerequisites
   # clang and lld are what librocksdb-sys needs: it compiles RocksDB from source
   # and runs bindgen. This mirrors summ's own CI (.github/workflows/ci.yml).
@@ -23,7 +88,9 @@
       - libssl-dev
     state: present
     update_cache: true
-  when: summ_engines | length > 0
+  when:
+    - summ_engines | length > 0
+    - not summ_from_release
 
 - name: Install rustup
   become: false
@@ -34,7 +101,9 @@
   args:
     executable: /bin/bash
     creates: "/home/{{ ansible_user }}/.cargo/bin/cargo"
-  when: summ_engines | length > 0
+  when:
+    - summ_engines | length > 0
+    - not summ_from_release
 
 - name: Sync the summ source tree to the VM
   become: false
@@ -51,7 +120,9 @@
       # rule is not portable across the rsync on the controller.
       - "--exclude=target"
       - "--exclude=.git"
-  when: summ_engines | length > 0
+  when:
+    - summ_engines | length > 0
+    - not summ_from_release
 
 - name: Build summ in release mode
   become: false
@@ -64,7 +135,9 @@
     executable: /bin/bash
   register: summ_build
   changed_when: "'Compiling' in summ_build.stderr or 'Compiling' in summ_build.stdout"
-  when: summ_engines | length > 0
+  when:
+    - summ_engines | length > 0
+    - not summ_from_release
 
 - name: Install the summ binary
   become: true
@@ -73,13 +146,15 @@
     dest: /usr/local/bin/summ
     remote_src: true
     mode: "0755"
-  when: summ_engines | length > 0
+  when:
+    - summ_engines | length > 0
+    - not summ_from_release
 
 - name: Record the summ revision that was built
   become: true
   ansible.builtin.copy:
     dest: /etc/bench-registry/summ.version
-    content: "{{ summ_src_rev }}\n"
+    content: "{{ summ_from_release | ternary(summ_release | default(''), summ_src_rev | default('unknown')) }}\n"
     mode: "0644"
   when: summ_engines | length > 0
 

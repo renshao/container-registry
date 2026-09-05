@@ -7,10 +7,14 @@ Wants=network-online.target
 Type=simple
 User={{ ansible_user }}
 Environment=SUMM_LOG=summ=info,summ_server=warn
+{# --engine only exists on builds that still carry a metadata-engine selector.
+   The v0.1.0-rc.1 release dropped it, so an engine with an empty `option`
+   renders a command line without the flag rather than one summ rejects. #}
 ExecStart=/usr/local/bin/summ serve \
     --listen 0.0.0.0:{{ engine.port }} \
-    --data-dir {{ engine.data_dir }} \
-    --engine {{ engine.option }}
+    --data-dir {{ engine.data_dir }}{% if engine.option %} \
+    --engine {{ engine.option }}{% endif %}
+
 Restart=no
 # Never restart on failure — see the distribution unit for why.
 LimitNOFILE=1048576

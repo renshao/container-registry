@@ -33,3 +33,11 @@ output "s3_reports_bucket" {
 output "aws_region" {
   value = var.region
 }
+
+output "instance_type_registry" {
+  value = aws_instance.registry.instance_type
+}
+
+output "instance_type_loadtester" {
+  value = aws_instance.loadtester.instance_type
+}

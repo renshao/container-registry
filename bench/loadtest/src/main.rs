@@ -13,6 +13,14 @@ use crate::client::RegistryClient;
 use crate::metrics::Aggregator;
 use crate::report::{PullSample, Report};
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+enum ImageOrder {
+    /// image1 x iterations, image2 x iterations, ...
+    Grouped,
+    /// one full pass over the list per iteration
+    RoundRobin,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "loadtest", about = "OCI registry pull load tester")]
 struct Args {
@@ -61,6 +69,18 @@ struct Args {
     #[arg(long)]
     max_pulls: Option<usize>,
 
+    /// How repeated pulls are ordered across the image list.
+    ///
+    /// `grouped` emits every iteration of image 1, then of image 2, and so on.
+    /// `round-robin` emits one pass over the whole list per iteration, so pull
+    /// N is always image N % len. At high --concurrency that is the difference
+    /// between 200 simultaneous pulls of one image and 200 pulls spread over
+    /// the corpus; only the latter is a realistic load. It also makes
+    /// --max-pulls truncate whole passes instead of amputating the tail of the
+    /// image list.
+    #[arg(long, value_enum, default_value_t = ImageOrder::Grouped)]
+    image_order: ImageOrder,
+
     /// Path to a file with one repo:tag per line. Skips catalog discovery;
     /// required for registries that do not support GET /v2/_catalog (e.g. ECR).
     #[arg(long)]
@@ -105,7 +125,7 @@ async fn main() -> Result<()> {
         let content = tokio::fs::read_to_string(images_path)
             .await
             .with_context(|| format!("reading images file {}", images_path.display()))?;
-        let mut pairs = Vec::new();
+        let mut unique: Vec<(String, String)> = Vec::new();
         for line in content.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -115,28 +135,24 @@ async fn main() -> Result<()> {
             let without_host = strip_registry_host(line);
             match without_host.split_once(':') {
                 Some((repo, tag)) => {
-                    let repo = repo.to_string();
-                    let tag = tag.to_string();
                     if let Some(filter) = &args.repo_filter {
                         if !repo.contains(filter) {
                             continue;
                         }
                     }
-                    for _ in 0..args.iterations {
-                        pairs.push((repo.clone(), tag.clone()));
-                    }
+                    unique.push((repo.to_string(), tag.to_string()));
                 }
                 None => {
                     tracing::warn!(line, "skipping line: no tag (expected repo:tag)");
                 }
             }
         }
-        pairs
+        expand(&unique, args.iterations, args.image_order)
     } else {
         tracing::info!(target = %args.target, "discovering catalog");
         let catalog = client.catalog().await.context("catalog fetch failed")?;
         tracing::info!(repo_count = catalog.len(), "catalog discovered");
-        let mut pairs = Vec::new();
+        let mut unique: Vec<(String, String)> = Vec::new();
         for repo in &catalog {
             if let Some(filter) = &args.repo_filter {
                 if !repo.contains(filter) {
@@ -151,12 +167,10 @@ async fn main() -> Result<()> {
                 }
             };
             for tag in tags {
-                for _ in 0..args.iterations {
-                    pairs.push((repo.clone(), tag.clone()));
-                }
+                unique.push((repo.clone(), tag));
             }
         }
-        pairs
+        expand(&unique, args.iterations, args.image_order)
     };
 
     if let Some(cap) = args.max_pulls {
@@ -228,6 +242,26 @@ async fn main() -> Result<()> {
     report.print_summary();
 
     Ok(())
+}
+
+// Repeats the image list `iterations` times in the requested order.
+fn expand(unique: &[(String, String)], iterations: usize, order: ImageOrder) -> Vec<(String, String)> {
+    let mut out = Vec::with_capacity(unique.len() * iterations);
+    match order {
+        ImageOrder::Grouped => {
+            for pair in unique {
+                for _ in 0..iterations {
+                    out.push(pair.clone());
+                }
+            }
+        }
+        ImageOrder::RoundRobin => {
+            for _ in 0..iterations {
+                out.extend(unique.iter().cloned());
+            }
+        }
+    }
+    out
 }
 
 // Strips a registry hostname from an image reference if the first path component

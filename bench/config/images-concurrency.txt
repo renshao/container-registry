@@ -1,0 +1,47 @@
+# Corpus for the high-concurrency pull benchmark (bench/concurrency.sh).
+#
+# 25 public images, ~7.3 GB of linux/amd64 content, deliberately spread across
+# three size bands so a single pull size does not define the result:
+#
+#   8 images    2-120 MB   manifest and small-blob path, high request rate
+#  12 images  160-580 MB   the ordinary application image
+#   5 images  0.6-2.1 GB   sustained streaming under contention
+#
+# Mean pull is ~290 MB, median ~180 MB. That ratio matters: with a corpus of
+# uniform giants, a concurrency sweep only ever measures the NIC. Here a wave of
+# 200 concurrent pulls is a realistic mix, so queueing shows up in the small
+# images' latency before the large ones have finished streaming.
+#
+# Every ref is anonymously pullable and resolves to linux/amd64. populate.sh
+# mirrors each one once from its public home, then fans out locally.
+
+# --- small: 2-120 MB ---
+busybox:1.37
+alpine:3.21
+redis:7.4-alpine
+caddy:2.9-alpine
+python:3.13-alpine
+nginx:1.27-alpine
+node:22-alpine
+postgres:17-alpine
+
+# --- medium: 160-580 MB ---
+ubuntu:24.04
+debian:bookworm-slim
+nginx:1.27
+rabbitmq:4.0-management
+postgres:17
+mysql:9.1
+eclipse-temurin:21-jdk
+golang:1.23
+mongo:8.0
+mcr.microsoft.com/dotnet/sdk:8.0
+node:22
+python:3.13
+
+# --- large: 0.5-2.1 GB ---
+rust:1.83
+gcc:14
+tensorflow/tensorflow:2.18.0
+docker.elastic.co/elasticsearch/elasticsearch:8.16.1
+nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04

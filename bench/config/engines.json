@@ -12,7 +12,9 @@
     "                  always attributable to one engine",
     "option            engine-specific knob. For summ this is the metadata engine",
     "                  (summ serve --engine). Empty for distribution, whose backend",
-    "                  is chosen by the rendered config file instead.",
+    "                  is chosen by the rendered config file instead. Leave it",
+    "                  empty for a summ build that has no --engine flag, such as",
+    "                  the v0.1.0-rc.1 release.",
     "requires_provider cloud provider the engine needs, if any. Naming one that",
     "                  does not match --provider is an error, not a silent skip:",
     "                  a summary missing a row is a result nobody questions."
@@ -37,6 +39,13 @@
       "port": 5010,
       "option": "rocks",
       "label": "summ (RocksDB meta, filesystem blobs)"
+    },
+    "summ-release": {
+      "kind": "summ",
+      "storage": "fs",
+      "port": 5012,
+      "option": "",
+      "label": "summ v0.1.0-rc.1 (release binary)"
     },
     "summ-redb": {
       "kind": "summ",

@@ -33,6 +33,7 @@ IMAGES_FILE="$CONFIG_DIR/images.txt"
 ENGINES="$(jq -r '.default_engines | join(",")' "$ENGINE_CATALOG")"
 BASELINE="$(jq -r '.default_baseline' "$ENGINE_CATALOG")"
 SUMM_SRC="$REPO_ROOT/../summ"
+SUMM_RELEASE=""
 ROUNDS=1
 SMOKE=false
 DESTROY=false
@@ -65,6 +66,10 @@ Self-hosted mode (default):
                                 engine ran first (default: 1)
   --summ-src <path>             Local summ working tree to build and benchmark
                                 (default: $SUMM_SRC)
+  --summ-release <tag>          Install summ from this GitHub release tag instead
+                                of building --summ-src. Skips the toolchain and
+                                the RocksDB compile, and the bytes under test are
+                                the bytes users download.
   --images <file>               Override images list (default: config/images.txt)
   --smoke                       Use config/images-smoke.txt (3 small images)
   --concurrency <n>             Parallel image pulls in load test (default: 1)
@@ -103,6 +108,7 @@ while [[ $# -gt 0 ]]; do
     --baseline)           BASELINE="$2"; shift 2 ;;
     --rounds)             ROUNDS="$2"; shift 2 ;;
     --summ-src)           SUMM_SRC="$2"; shift 2 ;;
+    --summ-release)       SUMM_RELEASE="$2"; shift 2 ;;
     --images)             IMAGES_FILE="$2"; shift 2 ;;
     --smoke)              SMOKE=true; shift ;;
     --concurrency)        CONCURRENCY="$2"; shift 2 ;;
@@ -163,8 +169,10 @@ if [[ -z "$MANAGED_REGISTRY" ]]; then
   for e in $ENGINE_LIST; do
     [[ "$(jq -r --arg e "$e" '.engines[$e].kind' "$ENGINE_CATALOG")" == "summ" ]] && needs_summ=true
   done
-  if [[ "$needs_summ" == true ]]; then
-    [[ -d "$SUMM_SRC" ]] || die "summ source not found at $SUMM_SRC (set --summ-src)"
+  if [[ "$needs_summ" == true && -n "$SUMM_RELEASE" ]]; then
+    log "summ: release $SUMM_RELEASE (skipping the local source tree)"
+  elif [[ "$needs_summ" == true ]]; then
+    [[ -d "$SUMM_SRC" ]] || die "summ source not found at $SUMM_SRC (set --summ-src or --summ-release)"
     [[ -f "$SUMM_SRC/summ-server/Cargo.toml" ]] \
       || die "$SUMM_SRC does not look like the summ workspace (no summ-server/Cargo.toml)"
     SUMM_SRC="$(cd "$SUMM_SRC" && pwd)"
@@ -248,7 +256,9 @@ ENGINE_SPEC="$RUN_DIR/engines-selected.json"
 
 if [[ -z "$MANAGED_REGISTRY" ]]; then
   SUMM_REV="n/a"
-  if [[ "$needs_summ" == true ]]; then
+  if [[ "$needs_summ" == true && -n "$SUMM_RELEASE" ]]; then
+    SUMM_REV="$SUMM_RELEASE"
+  elif [[ "$needs_summ" == true ]]; then
     if git -C "$SUMM_SRC" rev-parse HEAD >/dev/null 2>&1; then
       SUMM_REV="$(git -C "$SUMM_SRC" rev-parse --short HEAD)"
       git -C "$SUMM_SRC" diff --quiet || SUMM_REV="$SUMM_REV-dirty"
@@ -335,7 +345,9 @@ if [[ -z "$MANAGED_REGISTRY" && "$SKIP_PROVISION" == false ]]; then
       ;;
   esac
   ansible-playbook -i "$INV" "$ANSIBLE_DIR/registry-setup.yml" \
-    --extra-vars "@$ENGINE_SPEC" "${storage_vars[@]}"
+    --extra-vars "@$ENGINE_SPEC" \
+    --extra-vars "summ_release=$SUMM_RELEASE" \
+    "${storage_vars[@]}"
 fi
 
 if [[ "$SKIP_PROVISION" == false ]]; then
