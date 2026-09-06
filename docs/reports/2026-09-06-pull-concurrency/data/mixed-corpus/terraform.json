@@ -1,0 +1,57 @@
+{
+  "admin_username": {
+    "sensitive": false,
+    "type": "string",
+    "value": "ubuntu"
+  },
+  "aws_region": {
+    "sensitive": false,
+    "type": "string",
+    "value": "ap-southeast-2"
+  },
+  "instance_type_loadtester": {
+    "sensitive": false,
+    "type": "string",
+    "value": "c6in.4xlarge"
+  },
+  "instance_type_registry": {
+    "sensitive": false,
+    "type": "string",
+    "value": "m6idn.2xlarge"
+  },
+  "loadtester_private_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "10.30.1.33"
+  },
+  "loadtester_public_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "54.66.41.225"
+  },
+  "registry_private_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "10.30.1.222"
+  },
+  "registry_public_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "52.62.219.249"
+  },
+  "s3_registry_bucket": {
+    "sensitive": false,
+    "type": "string",
+    "value": "regbench-auddbu-registry"
+  },
+  "s3_reports_bucket": {
+    "sensitive": false,
+    "type": "string",
+    "value": "regbench-auddbu-reports"
+  },
+  "ssh_private_key_path": {
+    "sensitive": false,
+    "type": "string",
+    "value": "/Users/ren/.ssh/registry-bench-aws"
+  }
+}

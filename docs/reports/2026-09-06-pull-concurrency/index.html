@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Does summ Stop Scaling?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+  :root {
+    /* Instrument palette: neutrals biased cyan toward the summ accent. */
+    --paper:      #f5f7f5;
+    --panel:      #ffffff;
+    --rule:       #d8e0dd;
+    --rule-soft:  #e8eeeb;
+    --ink:        #121a1c;
+    --ink-2:      #37474c;
+    --muted:      #61737a;
+    --summ:       #0f6a5a;
+    --summ-soft:  #e0f0ec;
+    --dist:       #8f6520;
+    --dist-soft:  #f4ebda;
+    --ceiling:    #b0403a;
+    --shadow:     0 1px 2px rgba(18, 26, 28, .06), 0 8px 24px -16px rgba(18, 26, 28, .28);
+
+    color-scheme: light dark;
+  }
+
+  /* Dark tokens, written out for both the un-stamped and stamped cases. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0e1417;
+      --panel:      #151d21;
+      --rule:       #2a373c;
+      --rule-soft:  #1e292d;
+      --ink:        #e6edea;
+      --ink-2:      #b3c2c0;
+      --muted:      #8399a0;
+      --summ:       #4cc3a6;
+      --summ-soft:  #12312c;
+      --dist:       #d3a457;
+      --dist-soft:  #2f2716;
+      --ceiling:    #e2776d;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #0e1417;
+    --panel:      #151d21;
+    --rule:       #2a373c;
+    --rule-soft:  #1e292d;
+    --ink:        #e6edea;
+    --ink-2:      #b3c2c0;
+    --muted:      #8399a0;
+    --summ:       #4cc3a6;
+    --summ-soft:  #12312c;
+    --dist:       #d3a457;
+    --dist-soft:  #2f2716;
+    --ceiling:    #e2776d;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 28px 96px;
+  }
+
+  /* One measured column for prose; panels break out wider. */
+  .col { max-width: 68ch; }
+
+  h1, h2, h3, .label, .meta, nav, th, .tag {
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .num, td.n, .stat-v, code, .mono {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- masthead ---------- */
+  header.top {
+    border-bottom: 2px solid var(--ink);
+    padding: 56px 0 26px;
+    margin-bottom: 40px;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--summ);
+    margin: 0 0 18px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .eyebrow::after {
+    content: "";
+    flex: 1 1 40px;
+    height: 1px;
+    background: var(--rule);
+  }
+  h1 {
+    font-size: clamp(2.1rem, 5.2vw, 3.4rem);
+    line-height: 1.04;
+    letter-spacing: -.022em;
+    font-weight: 600;
+    margin: 0 0 20px;
+    text-wrap: balance;
+    max-width: 20ch;
+  }
+  .standfirst {
+    font-size: 1.16rem;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 60ch;
+    margin: 0;
+  }
+  .standfirst strong { color: var(--ink); font-weight: 500; }
+
+  /* ---------- run metadata ---------- */
+  .runbar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 36px 0 0;
+  }
+  .runbar div { background: var(--paper); padding: 12px 14px; }
+  .runbar dt {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 10.5px;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 4px;
+  }
+  .runbar dd {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13.5px;
+    margin: 0;
+    color: var(--ink);
+  }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 68px; }
+  h2 {
+    font-size: 1.62rem;
+    font-weight: 600;
+    letter-spacing: -.014em;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  h2 .h2num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .72em;
+    color: var(--summ);
+    font-weight: 500;
+    margin-right: .55em;
+  }
+  h3 {
+    font-size: 1.02rem;
+    font-weight: 600;
+    letter-spacing: .002em;
+    margin: 34px 0 8px;
+  }
+  .deck {
+    color: var(--muted);
+    font-size: .95rem;
+    margin: 0 0 26px;
+    max-width: 62ch;
+  }
+  p { margin: 0 0 18px; }
+  .col p:last-child { margin-bottom: 0; }
+  strong { font-weight: 600; }
+  em.term { font-style: normal; font-family: "IBM Plex Mono", monospace; font-size: .9em; }
+
+  /* ---------- headline stats ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 22px;
+    margin: 30px 0 8px;
+  }
+  .stat { border-top: 2px solid var(--summ); padding-top: 12px; }
+  .stat.alt { border-top-color: var(--ceiling); }
+  .stat-v {
+    font-size: 2.05rem;
+    font-weight: 500;
+    letter-spacing: -.03em;
+    line-height: 1.05;
+    color: var(--ink);
+  }
+  .stat-v small { font-size: .46em; font-weight: 400; color: var(--muted); margin-left: .25em; letter-spacing: 0; }
+  .stat-k {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 7px;
+  }
+  .stat-note { font-size: .84rem; color: var(--ink-2); margin-top: 6px; line-height: 1.45; }
+
+  /* ---------- figure panels ---------- */
+  figure {
+    margin: 34px 0 0;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+    padding: 22px 22px 16px;
+  }
+  figure svg { display: block; width: 100%; height: auto; }
+  figcaption {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: .84rem;
+    color: var(--muted);
+    line-height: 1.5;
+    border-top: 1px solid var(--rule-soft);
+    margin-top: 14px;
+    padding-top: 12px;
+    max-width: 78ch;
+  }
+  figcaption b { color: var(--ink-2); font-weight: 600; }
+
+  .legend {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 12.5px;
+    color: var(--ink-2);
+    margin-bottom: 6px;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 15px; height: 3px; border-radius: 2px; display: inline-block; }
+  .swatch.dash {
+    height: 0;
+    border-top: 2px dashed var(--ceiling);
+    width: 17px;
+  }
+
+  /* ---------- tables ---------- */
+  .tablewrap { overflow-x: auto; margin-top: 22px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 620px; }
+  caption {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 12px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: left;
+    padding-bottom: 9px;
+  }
+  th {
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    text-align: right;
+    padding: 0 12px 8px 0;
+    border-bottom: 1px solid var(--ink);
+    white-space: nowrap;
+  }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  th:last-child, td:last-child { padding-right: 0; }
+  td {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    padding: 7px 12px 7px 0;
+    border-bottom: 1px solid var(--rule-soft);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  tbody tr.e-summ td:first-child { color: var(--summ); font-weight: 500; }
+  tbody tr.e-dist td:first-child { color: var(--dist); font-weight: 500; }
+  td.best { color: var(--ink); font-weight: 600; }
+  tbody tr.sep td { border-top: 1px solid var(--rule); }
+
+  .tag {
+    display: inline-block;
+    font-size: 10.5px;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 2px;
+    font-weight: 600;
+  }
+  .tag.ok { background: var(--summ-soft); color: var(--summ); }
+
+  /* ---------- callouts ---------- */
+  .callout {
+    border-left: 3px solid var(--ceiling);
+    background: var(--panel);
+    padding: 18px 22px;
+    margin: 30px 0 0;
+    box-shadow: var(--shadow);
+  }
+  .callout h3 { margin-top: 0; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .label {
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ceiling);
+    font-weight: 600;
+    margin-bottom: 7px;
+  }
+
+  ul.notes { padding-left: 0; list-style: none; margin: 20px 0 0; max-width: 68ch; }
+  ul.notes li {
+    padding: 13px 0 13px 26px;
+    border-top: 1px solid var(--rule-soft);
+    position: relative;
+    font-size: .96rem;
+  }
+  ul.notes li::before {
+    content: "";
+    position: absolute;
+    left: 4px; top: 24px;
+    width: 9px; height: 1px;
+    background: var(--summ);
+  }
+  ul.notes li b { font-weight: 600; }
+
+  code {
+    font-size: .87em;
+    background: var(--rule-soft);
+    padding: 1px 5px;
+    border-radius: 2px;
+    color: var(--ink-2);
+  }
+
+  footer {
+    margin-top: 76px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: .84rem;
+    color: var(--muted);
+    max-width: 72ch;
+  }
+  footer code { background: none; padding: 0; color: var(--ink-2); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    a { transition: color .15s ease; }
+  }
+  a { color: var(--summ); text-underline-offset: 2px; }
+  a:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--summ);
+    outline-offset: 3px;
+  }
+</style>
+<style>
+  /* Baseline the artifact host supplies; inlined here so this file stands alone. */
+  html { color-scheme: light dark; }
+  body { margin: 0; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+  <header class="top">
+    <p class="eyebrow">summ v0.1.0-rc.1 &nbsp;·&nbsp; pull concurrency &nbsp;·&nbsp; aws ap-southeast-2</p>
+    <h1>Where does summ stop scaling?</h1>
+    <p class="standfirst">
+      Across 45,400 pulls at up to 400 simultaneous clients, on a single EC2 instance,
+      <strong>it didn't</strong>. summ held the network's line rate flat from 25 concurrent
+      pullers to 400 with zero failures, on under three-quarters of one CPU core. The
+      ceiling this test found belongs to the NIC, not the registry.
+    </p>
+
+    <dl class="runbar">
+      <div><dt>Registry host</dt><dd>m6idn.2xlarge</dd></div>
+      <div><dt>vCPU / RAM</dt><dd>8 / 32 GiB</dd></div>
+      <div><dt>Blob store</dt><dd>474 GB NVMe</dd></div>
+      <div><dt>NIC ceiling</dt><dd>40 Gbps</dd></div>
+      <div><dt>Total pulls</dt><dd>45,400</dd></div>
+      <div><dt>Failures</dt><dd>0</dd></div>
+      <div><dt>Bytes served</dt><dd>1.67 TB</dd></div>
+      <div><dt>Baseline</dt><dd>distribution 3.1.1</dd></div>
+    </dl>
+  </header>
+
+  <section style="margin-top:0">
+    <div class="col">
+      <h2><span class="h2num">01</span>The finding</h2>
+      <p class="deck">One VM, one registry process running at a time, same NVMe, same image list in the same order. Only concurrency changes.</p>
+      <p>
+        summ v0.1.0-rc.1 reached <strong>37.4 Gbps</strong> of measured egress — line rate for this
+        instance class — at 25 concurrent pullers, and stayed there through 50, 100, 200 and 400.
+        The curve is flat because there is nothing left to give: the network card is full.
+      </p>
+      <p>
+        distribution, the reference Go implementation, never reached line rate on the same box, and
+        moved <em class="term">away</em> from it as concurrency rose — from 3,985 MB/s at 25 clients
+        down to 3,471 at 400. That is the shape of a server becoming the bottleneck. summ's flat line
+        is the shape of one that hasn't.
+      </p>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-v">4,715<small>MB/s</small></div>
+        <div class="stat-k">summ, 200 concurrent</div>
+        <div class="stat-note">Held within 1.4% of this figure at every level from 25 to 400.</div>
+      </div>
+      <div class="stat">
+        <div class="stat-v">0.67<small>core</small></div>
+        <div class="stat-k">CPU at 200 concurrent</div>
+        <div class="stat-note">Of eight available. distribution needed 0.80 to serve 23% less.</div>
+      </div>
+      <div class="stat">
+        <div class="stat-v">1.36<small>×</small></div>
+        <div class="stat-k">Throughput vs baseline @ 400</div>
+        <div class="stat-note">The gap widens with concurrency: 1.17× at 25, 1.36× at 400.</div>
+      </div>
+      <div class="stat alt">
+        <div class="stat-v">0<small>/ 45,400</small></div>
+        <div class="stat-k">Failed pulls</div>
+        <div class="stat-note">Both engines, every point. No resets, no timeouts, no 5xx.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <h2><span class="h2num">02</span>Throughput against the wall</h2>
+      <p class="deck">Small-image corpus — six images averaging 13 MB, where a pull is mostly manifest fetch, blob open and connection setup rather than streaming.</p>
+    </div>
+
+    <figure>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--summ)"></i> summ v0.1.0-rc.1</span>
+        <span><i class="swatch" style="background:var(--dist)"></i> distribution 3.1.1</span>
+        <span><i class="swatch dash"></i> measured line rate · 37.4 Gbps</span>
+      </div>
+      <svg viewBox="0 0 720 360" role="img" aria-label="Aggregate throughput against concurrency. summ holds about 4,700 MB per second from 25 through 400 concurrent pulls, tracking the measured line rate. distribution starts at 3,985 and declines to 3,471.">
+        <!-- gridlines -->
+        <g stroke="var(--rule-soft)" stroke-width="1">
+          <line x1="70" y1="300" x2="700" y2="300"></line>
+          <line x1="70" y1="246" x2="700" y2="246"></line>
+          <line x1="70" y1="192" x2="700" y2="192"></line>
+          <line x1="70" y1="138" x2="700" y2="138"></line>
+          <line x1="70" y1="84"  x2="700" y2="84"></line>
+          <line x1="70" y1="30"  x2="700" y2="30"></line>
+        </g>
+        <!-- y axis labels -->
+        <g fill="var(--muted)" font-family="IBM Plex Mono, monospace" font-size="11" text-anchor="end">
+          <text x="60" y="304">0</text>
+          <text x="60" y="250">1000</text>
+          <text x="60" y="196">2000</text>
+          <text x="60" y="142">3000</text>
+          <text x="60" y="88">4000</text>
+          <text x="60" y="34">5000</text>
+        </g>
+        <text x="70" y="16" fill="var(--muted)" font-family="IBM Plex Sans, sans-serif" font-size="11" letter-spacing="0.08em">MB/s DELIVERED</text>
+
+        <!-- line-rate ceiling: 4675 MB/s -->
+        <line x1="70" y1="47.6" x2="700" y2="47.6" stroke="var(--ceiling)" stroke-width="2" stroke-dasharray="7 5"></line>
+        <text x="700" y="41" fill="var(--ceiling)" font-family="IBM Plex Mono, monospace" font-size="11" text-anchor="end">37.4 Gbps — NIC line rate</text>
+
+        <!-- distribution -->
+        <polyline fill="none" stroke="var(--dist)" stroke-width="2.5" stroke-linejoin="round"
+          points="70,84.8 227,89.6 385,93.3 542,103.3 700,112.6"></polyline>
+        <g fill="var(--dist)">
+          <circle cx="70"  cy="84.8"  r="4.5"></circle>
+          <circle cx="227" cy="89.6"  r="4.5"></circle>
+          <circle cx="385" cy="93.3"  r="4.5"></circle>
+          <circle cx="542" cy="103.3" r="4.5"></circle>
+          <circle cx="700" cy="112.6" r="4.5"></circle>
+        </g>
+        <text x="688" y="132" fill="var(--dist)" font-family="IBM Plex Mono, monospace" font-size="11.5" text-anchor="end">3,471</text>
+
+        <!-- summ -->
+        <polyline fill="none" stroke="var(--summ)" stroke-width="2.5" stroke-linejoin="round"
+          points="70,49.0 227,48.4 385,46.1 542,45.4 700,45.4"></polyline>
+        <g fill="var(--summ)">
+          <circle cx="70"  cy="49.0" r="4.5"></circle>
+          <circle cx="227" cy="48.4" r="4.5"></circle>
+          <circle cx="385" cy="46.1" r="4.5"></circle>
+          <circle cx="542" cy="45.4" r="4.5"></circle>
+          <circle cx="700" cy="45.4" r="4.5"></circle>
+        </g>
+        <text x="688" y="70" fill="var(--summ)" font-family="IBM Plex Mono, monospace" font-size="11.5" text-anchor="end">4,714</text>
+
+        <!-- x axis -->
+        <line x1="70" y1="300" x2="700" y2="300" stroke="var(--ink)" stroke-width="1.5"></line>
+        <g fill="var(--ink-2)" font-family="IBM Plex Mono, monospace" font-size="12" text-anchor="middle">
+          <text x="70"  y="322">25</text>
+          <text x="227" y="322">50</text>
+          <text x="385" y="322">100</text>
+          <text x="542" y="322">200</text>
+          <text x="700" y="322">400</text>
+        </g>
+        <text x="385" y="346" fill="var(--muted)" font-family="IBM Plex Sans, sans-serif" font-size="11" letter-spacing="0.08em" text-anchor="middle">CONCURRENT PULLS</text>
+      </svg>
+      <figcaption>
+        <b>summ tracks the ceiling; distribution slopes away from it.</b> The dashed rule is the highest
+        egress the registry host was observed to sustain, read from its own NIC counters rather than from
+        the client. summ sits on that rule at every point, so its own limit is somewhere above what this
+        instance can express. distribution's decline under load is a property of the server.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="col">
+      <h2><span class="h2num">03</span>What a client waits</h2>
+      <p class="deck">Median time to complete one whole image pull — manifest, config and every layer.</p>
+      <p>
+        Throughput is the server's view. Latency is the puller's, and it is the number a CI job or a
+        node starting 200 containers actually feels. summ's median pull is faster at every level, and
+        the margin grows as the machine fills: 1.20× at 25 clients, <strong>1.49× at 400</strong>.
+      </p>
+    </div>
+
+    <figure>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--summ)"></i> summ v0.1.0-rc.1</span>
+        <span><i class="swatch" style="background:var(--dist)"></i> distribution 3.1.1</span>
+      </div>
+      <svg viewBox="0 0 720 360" role="img" aria-label="Median pull latency against concurrency. summ rises from 65 to 1,051 milliseconds between 25 and 400 concurrent pulls; distribution rises from 78 to 1,562.">
+        <g stroke="var(--rule-soft)" stroke-width="1">
+          <line x1="70" y1="300"  x2="700" y2="300"></line>
+          <line x1="70" y1="232.5" x2="700" y2="232.5"></line>
+          <line x1="70" y1="165"  x2="700" y2="165"></line>
+          <line x1="70" y1="97.5" x2="700" y2="97.5"></line>
+          <line x1="70" y1="30"   x2="700" y2="30"></line>
+        </g>
+        <g fill="var(--muted)" font-family="IBM Plex Mono, monospace" font-size="11" text-anchor="end">
+          <text x="60" y="304">0</text>
+          <text x="60" y="236">400</text>
+          <text x="60" y="169">800</text>
+          <text x="60" y="101">1200</text>
+          <text x="60" y="34">1600</text>
+        </g>
+        <text x="70" y="16" fill="var(--muted)" font-family="IBM Plex Sans, sans-serif" font-size="11" letter-spacing="0.08em">p50 MILLISECONDS PER PULL</text>
+
+        <polyline fill="none" stroke="var(--dist)" stroke-width="2.5" stroke-linejoin="round"
+          points="70,286.8 227,272.8 385,244.1 542,177.2 700,36.4"></polyline>
+        <g fill="var(--dist)">
+          <circle cx="70"  cy="286.8" r="4.5"></circle>
+          <circle cx="227" cy="272.8" r="4.5"></circle>
+          <circle cx="385" cy="244.1" r="4.5"></circle>
+          <circle cx="542" cy="177.2" r="4.5"></circle>
+          <circle cx="700" cy="36.4"  r="4.5"></circle>
+        </g>
+        <text x="688" y="28" fill="var(--dist)" font-family="IBM Plex Mono, monospace" font-size="11.5" text-anchor="end">1,562 ms</text>
+
+        <polyline fill="none" stroke="var(--summ)" stroke-width="2.5" stroke-linejoin="round"
+          points="70,289.0 227,278.4 385,263.7 542,216.5 700,122.6"></polyline>
+        <g fill="var(--summ)">
+          <circle cx="70"  cy="289.0" r="4.5"></circle>
+          <circle cx="227" cy="278.4" r="4.5"></circle>
+          <circle cx="385" cy="263.7" r="4.5"></circle>
+          <circle cx="542" cy="216.5" r="4.5"></circle>
+          <circle cx="700" cy="122.6" r="4.5"></circle>
+        </g>
+        <text x="688" y="115" fill="var(--summ)" font-family="IBM Plex Mono, monospace" font-size="11.5" text-anchor="end">1,051 ms</text>
+
+        <line x1="70" y1="300" x2="700" y2="300" stroke="var(--ink)" stroke-width="1.5"></line>
+        <g fill="var(--ink-2)" font-family="IBM Plex Mono, monospace" font-size="12" text-anchor="middle">
+          <text x="70"  y="322">25</text>
+          <text x="227" y="322">50</text>
+          <text x="385" y="322">100</text>
+          <text x="542" y="322">200</text>
+          <text x="700" y="322">400</text>
+        </g>
+        <text x="385" y="346" fill="var(--muted)" font-family="IBM Plex Sans, sans-serif" font-size="11" letter-spacing="0.08em" text-anchor="middle">CONCURRENT PULLS</text>
+      </svg>
+      <figcaption>
+        <b>Both curves climb, because queueing is arithmetic.</b> Four hundred clients sharing one 40 Gbps
+        pipe wait for each other no matter how good the server is. What separates the two lines is how much
+        of that wait the server adds on top.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="col">
+      <h2><span class="h2num">04</span>Where summ looks worse</h2>
+      <p class="deck">One result did not go summ's way, and it is the one worth acting on.</p>
+    </div>
+
+    <div class="callout">
+      <p class="label">Tail latency</p>
+      <h3>summ's slowest pulls are proportionally slower than distribution's</h3>
+      <p>
+        Measured as the spread between a typical pull and a bad one — p99 divided by p50 — summ is the
+        wider distribution above 50 concurrent clients. At 100 concurrent, summ's p99 is
+        <strong>4.75×</strong> its median (216 ms → 1,025 ms) while distribution's is 1.81×
+        (331 ms → 599 ms). In absolute terms distribution's p99 is genuinely better at that one point:
+        599 ms against 1,025 ms.
+      </p>
+      <p>
+        A caveat that does not excuse it: summ is moving 23% more bytes per second at the same nominal
+        concurrency, so it is under more real load. But the pattern holds across 100, 200 and 400, and a
+        consistent 3–5× spread is a characteristic, not noise. If summ's tail matched its median, it
+        would win every column on this page.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <caption>Latency spread, small-image corpus</caption>
+        <thead>
+          <tr><th>Engine</th><th>Conc.</th><th>p50 ms</th><th>p99 ms</th><th>p99.9 ms</th><th>p99 ÷ p50</th></tr>
+        </thead>
+        <tbody>
+          <tr class="e-summ"><td>summ</td><td>25</td><td>65</td><td>133</td><td>161</td><td class="best">2.04×</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>25</td><td>78</td><td>177</td><td>221</td><td>2.26×</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>50</td><td>128</td><td>349</td><td>380</td><td>2.73×</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>50</td><td>161</td><td>370</td><td>489</td><td class="best">2.29×</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>100</td><td>216</td><td>1025</td><td>1501</td><td>4.75×</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>100</td><td>331</td><td>599</td><td>681</td><td class="best">1.81×</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>200</td><td>495</td><td>1627</td><td>2390</td><td>3.29×</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>200</td><td>728</td><td>1602</td><td>1812</td><td class="best">2.20×</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>400</td><td>1052</td><td>3323</td><td>4383</td><td>3.16×</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>400</td><td>1562</td><td>3372</td><td>4057</td><td class="best">2.16×</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <h2><span class="h2num">05</span>Full results</h2>
+      <p class="deck">Two corpora, ten measurement points each side. Every point restarts the engine and drops the page cache first, so none inherits the previous one's warm state.</p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <caption>Small-image corpus — 6 images, ~13 MB mean</caption>
+        <thead>
+          <tr><th>Engine</th><th>Conc.</th><th>Pulls ok/fail</th><th>MB/s</th><th>Pulls/s</th><th>p50 ms</th><th>p95 ms</th><th>p99 ms</th><th>Engine CPU</th></tr>
+        </thead>
+        <tbody>
+          <tr class="e-summ"><td>summ</td><td>25</td><td>1500/0</td><td class="best">4648</td><td class="best">361</td><td class="best">65</td><td class="best">111</td><td class="best">132</td><td class="best">0.47</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>25</td><td>1500/0</td><td>3985</td><td>309</td><td>78</td><td>146</td><td>176</td><td>0.71</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>50</td><td>1500/0</td><td class="best">4660</td><td class="best">362</td><td class="best">128</td><td class="best">287</td><td class="best">349</td><td class="best">0.52</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>50</td><td>1500/0</td><td>3896</td><td>303</td><td>161</td><td>279</td><td>368</td><td>0.71</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>100</td><td>2500/0</td><td class="best">4701</td><td class="best">365</td><td class="best">215</td><td>699</td><td>1008</td><td class="best">0.61</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>100</td><td>2500/0</td><td>3827</td><td>297</td><td>331</td><td class="best">519</td><td class="best">599</td><td>0.73</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>200</td><td>5000/0</td><td class="best">4715</td><td class="best">366</td><td class="best">495</td><td class="best">1195</td><td>1614</td><td class="best">0.67</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>200</td><td>5000/0</td><td>3642</td><td>283</td><td>728</td><td>1239</td><td class="best">1602</td><td>0.80</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>400</td><td>10000/0</td><td class="best">4714</td><td class="best">366</td><td class="best">1051</td><td class="best">2364</td><td class="best">3317</td><td class="best">0.72</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>400</td><td>10000/0</td><td>3471</td><td>270</td><td>1562</td><td>2631</td><td>3370</td><td>0.84</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <caption>Mixed corpus — 25 images, 2 MB to 2.1 GB, ~290 MB mean</caption>
+        <thead>
+          <tr><th>Engine</th><th>Conc.</th><th>Pulls ok/fail</th><th>MB/s</th><th>p50 ms</th><th>p95 ms</th><th>p99 ms</th><th>Engine CPU</th></tr>
+        </thead>
+        <tbody>
+          <tr class="e-summ"><td>summ</td><td>1</td><td>150/0</td><td>1177</td><td>141</td><td>857</td><td>1252</td><td class="best">0.07</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>1</td><td>150/0</td><td class="best">1355</td><td class="best">100</td><td class="best">853</td><td class="best">1219</td><td>0.09</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>8</td><td>150/0</td><td>2943</td><td>209</td><td>4023</td><td>5532</td><td class="best">0.31</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>8</td><td>150/0</td><td class="best">2955</td><td class="best">204</td><td class="best">3938</td><td class="best">5436</td><td class="best">0.31</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>25</td><td>150/0</td><td>3393</td><td>1051</td><td class="best">6205</td><td class="best">7295</td><td>0.40</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>25</td><td>150/0</td><td>3393</td><td class="best">818</td><td>6403</td><td>7668</td><td>0.40</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>50</td><td>250/0</td><td class="best">4470</td><td class="best">1578</td><td>8294</td><td class="best">12871</td><td>0.60</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>50</td><td>250/0</td><td>4293</td><td>1607</td><td class="best">7930</td><td>14226</td><td class="best">0.54</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>100</td><td>500/0</td><td class="best">4713</td><td class="best">3120</td><td>16007</td><td>27369</td><td>0.66</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>100</td><td>500/0</td><td>4705</td><td>3515</td><td class="best">17538</td><td class="best">25448</td><td class="best">0.59</td></tr>
+          <tr class="e-summ sep"><td>summ</td><td>200</td><td>1000/0</td><td>4713</td><td>6871</td><td class="best">31790</td><td>53366</td><td>0.64</td></tr>
+          <tr class="e-dist"><td>distribution</td><td>200</td><td>1000/0</td><td>4713</td><td class="best">6619</td><td>32638</td><td class="best">52924</td><td class="best">0.60</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col">
+      <p style="margin-top:26px">
+        The mixed corpus saturates the NIC by 100 concurrent clients, at which point both engines report
+        the same 4,713 MB/s and the comparison stops saying anything about either. It is included because
+        it establishes that summ fills the pipe with multi-gigabyte ML images as readily as with small
+        ones — not because its high-concurrency rows discriminate.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <h2><span class="h2num">06</span>What this does not establish</h2>
+      <p class="deck">Read these before quoting any number above.</p>
+      <ul class="notes">
+        <li><b>summ's actual ceiling is unknown.</b> It saturated a 40 Gbps NIC at 0.72 of one core with seven cores idle. Finding where it breaks needs a faster network or several load generators, not a bigger sweep.</li>
+        <li><b>This is a warm-working-set test.</b> The corpora are 7.3 GB and 78 MB against 32 GiB of RAM. Caches are dropped before every point, so each begins cold, but a long point ends up serving from page cache. It measures the request path, not the disk.</li>
+        <li><b>One run per point, no repeats.</b> The harness supports <code>--repeats</code> for interleaved sweeps; this run used one pass. Differences under about 5% should not be read as real.</li>
+        <li><b>Single region, single instance family.</b> ap-southeast-2, m6idn.2xlarge, Ubuntu 24.04, ext4 on local NVMe. Both engines ran natively under systemd — no containers on either side.</li>
+        <li><b>Pull only.</b> Push throughput was measured incidentally during corpus setup and is not comparable across engines, because the first engine populated also absorbs the upstream fetch.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Harness: <code>bench/concurrency.sh</code> in <code>summ-bench</code>, driving a Rust OCI client that
+      simulates containerd — <code>GET</code> manifest, then all blobs at fanout 3. Engine restarted and
+      <code>/proc/sys/vm/drop_caches</code> flushed before every point; one engine running at a time; identical
+      image list in identical order, verified servable by both engines before the sweep. Registry CPU and
+      egress read from the host's own <code>/proc</code> and <code>/sys</code> counters, independently of the
+      client's numbers.
+    </p>
+    <p>
+      Runs <code>conc-20260906-092504</code> (mixed) and <code>conc-20260906-093259</code> (small).
+      Raw per-pull samples are in the run directories; <code>concurrency.sh --summary-only &lt;dir&gt;</code>
+      re-renders from them. All AWS resources destroyed at completion.
+    </p>
+  </footer>
+
+</div>
+
+</body>
+</html>

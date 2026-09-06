@@ -1,0 +1,6 @@
+library/busybox:1.37
+library/alpine:3.21
+library/redis:7.4-alpine
+library/caddy:2.9-alpine
+library/python:3.13-alpine
+library/nginx:1.27-alpine

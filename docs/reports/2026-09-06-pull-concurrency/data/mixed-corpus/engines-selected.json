@@ -1,0 +1,28 @@
+{
+  "cloud": "aws",
+  "summ_src": "/Users/ren/projects/summcr/summ-bench/../summ",
+  "summ_src_rev": "v0.1.0-rc.1",
+  "distribution_version": "3.1.1",
+  "selected_engines": [
+    {
+      "kind": "summ",
+      "storage": "fs",
+      "port": 5012,
+      "option": "",
+      "label": "summ v0.1.0-rc.1 (release binary)",
+      "name": "summ-release",
+      "data_dir": "/mnt/registry-data/summ-release",
+      "unit": "bench-registry-summ-release.service"
+    },
+    {
+      "kind": "distribution",
+      "storage": "fs",
+      "port": 5000,
+      "option": "",
+      "label": "distribution (filesystem)",
+      "name": "distribution",
+      "data_dir": "/mnt/registry-data/distribution",
+      "unit": "bench-registry-distribution.service"
+    }
+  ]
+}

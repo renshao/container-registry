@@ -10,3 +10,9 @@
 *.md    text eol=lf
 *.txt   text eol=lf
 *.toml  text eol=lf
+*.html  text eol=lf
+
+# Archived report samples. `* text=auto` would autodetect these correctly, but
+# a gzip stream that ever got line-ending normalised is silently unrecoverable,
+# and these files are the evidence behind published numbers.
+*.gz    binary

@@ -1,0 +1,14 @@
+{
+  "run_id": "20260906-092504",
+  "provider": "aws",
+  "images_file": "images-concurrency.txt",
+  "sweep": "1,8,25,50,100,200",
+  "engines": "summ-release,distribution",
+  "summ_revision": "v0.1.0-rc.1",
+  "pulls_per_client": 5,
+  "min_pulls": 150,
+  "max_pulls": 1000,
+  "blob_concurrency": 3,
+  "repeats": 1,
+  "generated_at": "2026-09-06T09:31:51Z"
+}

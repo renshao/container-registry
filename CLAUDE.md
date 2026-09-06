@@ -158,6 +158,23 @@ bench.sh (workstation)
 | `bench/config/images.txt` | Curated ML/CUDA image corpus (~100 GB) |
 | `bench/config/images-smoke.txt` | 3 small images for smoke validation |
 | `notes/fs_limit.md` | Performance analysis and capacity planning |
+| `docs/reports/` | **Published reports** — curated, permanent, committed |
+
+## Published Reports
+
+`bench/reports/` is scratch and gitignored; most runs are throwaway. A run whose
+numbers are worth citing gets promoted to `docs/reports/<YYYY-MM-DD>-<slug>/`,
+which is committed and served by GitHub Pages.
+
+Promotion commits the rendered report **and the per-pull samples behind it**,
+gzipped (they compress to ~5%). `concurrency.sh --summary-only <dir>` reads
+`report-*.json.gz` directly, so an archived report re-renders without touching
+a cloud provider — that round trip is the acceptance test for an archive, and
+`docs/reports/README.md` has the promotion steps.
+
+Each archived run carries `run-meta.json`, recording the flags that produced it.
+Without it a re-render would print this script's current defaults in place of
+what actually ran, so **write it for any hand-assembled archive**.
 
 ## Infrastructure Defaults
 

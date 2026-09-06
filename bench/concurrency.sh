@@ -87,6 +87,8 @@ Usage: $0 [options]
   --summary-only <run-dir>   Re-render summary.md from the JSON reports already
                              in that directory. Touches no cloud resources, so a
                              report can be reworked long after the VMs are gone.
+                             Reads report-*.json and report-*.json.gz alike, so a
+                             released report's archived samples work unchanged.
   -h, --help                 This help
 
 Available engines:
@@ -117,6 +119,18 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
+
+# Every report file in RUN_DIR, either spelling, existing only. An unmatched
+# glob stays literal in bash 3.2, so each candidate is tested; the explicit
+# `return 0` keeps a failing final test from failing the whole function under
+# `set -e`.
+all_report_files() {
+  local f
+  for f in "$RUN_DIR"/report-*-c*-r*.json "$RUN_DIR"/report-*-c*-r*.json.gz; do
+    [[ -f "$f" ]] && printf '%s\n' "$f"
+  done
+  return 0
+}
 
 if [[ -n "$SUMMARY_ONLY" ]]; then
   [[ -d "$SUMMARY_ONLY" ]] || die "--summary-only: no such directory: $SUMMARY_ONLY"
@@ -178,17 +192,34 @@ fi
 RUN_DIR="$REPORTS_DIR/conc-$RUN_ID"
 if [[ -n "$SUMMARY_ONLY" ]]; then
   RUN_DIR="$(cd "$SUMMARY_ONLY" && pwd)"
-  RUN_ID="$(basename "$RUN_DIR" | sed 's/^conc-//')"
+  RUN_ID="$(basename "$RUN_DIR" | sed 's/^conc-//')"   # overridden by run-meta.json below
   ENGINE_SPEC="$RUN_DIR/engines-selected.json"
   [[ -f "$ENGINE_SPEC" ]] || die "--summary-only: $ENGINE_SPEC not found"
+
+  # Prefer the run's recorded parameters over this script's defaults, which
+  # describe some other run entirely.
+  META="$RUN_DIR/run-meta.json"
+  if [[ -f "$META" ]]; then
+    meta_run_id="$(jq -r '.run_id // empty' "$META")"
+    [[ -n "$meta_run_id" ]] && RUN_ID="$meta_run_id"
+    IMAGES_FILE="$CONFIG_DIR/$(jq -r '.images_file' "$META")"
+    PULLS_PER_CLIENT="$(jq -r '.pulls_per_client' "$META")"
+    MIN_PULLS="$(jq -r '.min_pulls' "$META")"
+    MAX_PULLS="$(jq -r '.max_pulls' "$META")"
+    BLOB_CONCURRENCY="$(jq -r '.blob_concurrency' "$META")"
+    PROVIDER="$(jq -r '.provider' "$META")"
+  else
+    log "WARNING: no run-meta.json — header values below are this script's"
+    log "         defaults, not necessarily what produced these results"
+  fi
   # The sweep and engine list are whatever the directory actually contains, not
   # whatever the defaults say: re-rendering must describe the run that happened.
   ENGINE_LIST="$(jq -r '.selected_engines[].name' "$ENGINE_SPEC" | tr '\n' ' ')"
-  SWEEP_LIST="$(ls "$RUN_DIR"/report-*-c*-r*.json 2>/dev/null \
-    | sed -E 's|.*-c([0-9]+)-r[0-9]+\.json|\1|' | sort -n -u | tr '\n' ' ')"
+  SWEEP_LIST="$(all_report_files | sed -E 's|.*-c([0-9]+)-r[0-9]+\.json(\.gz)?$|\1|' \
+    | sort -n -u | tr '\n' ' ')"
   SWEEP="$(echo "$SWEEP_LIST" | tr ' ' ',' | sed 's/,$//')"
-  [[ -n "${ENGINE_LIST// /}" ]] || die "--summary-only: no report-*.json files in $RUN_DIR"
-  REPEATS="$(ls "$RUN_DIR"/report-*-r*.json | sed -E 's|.*-r([0-9]+)\.json|\1|' | sort -n -u | tail -1)"
+  [[ -n "${ENGINE_LIST// /}" ]] || die "--summary-only: no report-*.json[.gz] files in $RUN_DIR"
+  REPEATS="$(all_report_files | sed -E 's|.*-r([0-9]+)\.json(\.gz)?$|\1|' | sort -n -u | tail -1)"
   log "re-rendering $RUN_DIR (engines:${ENGINE_LIST} sweep: $SWEEP)"
 else
   mkdir -p "$RUN_DIR"
@@ -260,6 +291,24 @@ jq --arg names "$ENGINES" --arg summ_src "$SUMM_SRC" --arg summ_rev "$SUMM_REV" 
     }' "$ENGINE_CATALOG" > "$ENGINE_SPEC"
 
 log "engines: $(jq -r '.selected_engines | map("\(.name):\(.port)") | join("  ")' "$ENGINE_SPEC")"
+
+# The sweep parameters are command-line flags, so a directory of results cannot
+# describe itself without them: re-rendering an archived run would silently
+# print this script's current defaults in place of what was actually run.
+# Recording them makes a released report reproducible from its own directory.
+jq -n \
+  --arg run_id "$RUN_ID" --arg provider "$PROVIDER" \
+  --arg images "$(basename "$IMAGES_FILE")" --arg sweep "$SWEEP" \
+  --arg engines "$ENGINES" --arg summ_rev "$SUMM_REV" \
+  --argjson ppc "$PULLS_PER_CLIENT" --argjson minp "$MIN_PULLS" \
+  --argjson maxp "$MAX_PULLS" --argjson blobc "$BLOB_CONCURRENCY" \
+  --argjson repeats "$REPEATS" '{
+    run_id: $run_id, provider: $provider, images_file: $images,
+    sweep: $sweep, engines: $engines, summ_revision: $summ_rev,
+    pulls_per_client: $ppc, min_pulls: $minp, max_pulls: $maxp,
+    blob_concurrency: $blobc, repeats: $repeats,
+    generated_at: (now | todate)
+  }' > "$RUN_DIR/run-meta.json"
 
 # ---------- 3. inventory ----------
 INV="$ANSIBLE_DIR/inventory/${PROVIDER}.ini"
@@ -553,13 +602,39 @@ def r2: . * 100 | round / 100;
     tx_mb_s: ([$reports[].registry.tx_mb_per_sec      | select(. != null)] | if length > 0 then (add / length | r2) else null end)
   }'
 
+# Released reports keep their per-pull samples gzipped — they are repetitive
+# JSON that compresses to about 5%, which is the difference between committing
+# the evidence and only committing the conclusions. Reading them here means an
+# archived run re-renders with --summary-only exactly like a fresh one.
+read_reports() {
+  local f
+  for f in "$@"; do
+    case "$f" in
+      *.gz) gzip -dc "$f" ;;
+      *)    cat "$f" ;;
+    esac
+  done
+}
+
+# Both spellings, existing files only. bash 3.2 leaves an unmatched glob as a
+# literal, so each candidate is tested rather than trusted.
+reports_for() {
+  local engine="$1" conc="$2" f
+  for f in "$RUN_DIR"/report-"$engine"-c"$conc"-r*.json \
+           "$RUN_DIR"/report-"$engine"-c"$conc"-r*.json.gz; do
+    [[ -f "$f" ]] && printf '%s\n' "$f"
+  done
+  return 0
+}
+
 POOLED="$RUN_DIR/.pooled.jsonl"
 : > "$POOLED"
 for engine in $ENGINE_LIST; do
   for conc in $SWEEP_LIST; do
-    files=( "$RUN_DIR"/report-"$engine"-c"$conc"-r*.json )
-    [[ -f "${files[0]}" ]] || continue
-    jq -n "$POOL_JQ" "${files[@]}" >> "$POOLED"
+    point_files=()
+    while IFS= read -r f; do point_files+=("$f"); done < <(reports_for "$engine" "$conc")
+    [[ ${#point_files[@]} -gt 0 ]] || continue
+    read_reports "${point_files[@]}" | jq -n "$POOL_JQ" >> "$POOLED"
   done
 done
 
